@@ -1,0 +1,46 @@
+{
+  "name": "DET-001 Repeated Windows Authentication Failures",
+  "description": "Several failed logons (Event ID 4625) for one account on one host within the look-back window. Draft for tuning experiment DET-001; not exported from Kibana.",
+  "type": "threshold",
+  "language": "kuery",
+  "index": ["winlogbeat-*"],
+  "query": "event.provider: \"Microsoft-Windows-Security-Auditing\" and event.code: \"4625\"",
+  "threshold": {
+    "field": ["host.name", "user.name"],
+    "value": 3
+  },
+  "interval": "5m",
+  "from": "now-6m",
+  "enabled": false,
+  "severity": "medium",
+  "risk_score": 47,
+  "tags": ["DET-001", "Windows", "Authentication", "Draft"],
+  "false_positives": [
+    "Users mistyping a password",
+    "Services, scheduled tasks, or mapped drives retrying a stale credential"
+  ],
+  "threat": [
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0006",
+        "name": "Credential Access",
+        "reference": "https://attack.mitre.org/tactics/TA0006/"
+      },
+      "technique": [
+        {
+          "id": "T1110",
+          "name": "Brute Force",
+          "reference": "https://attack.mitre.org/techniques/T1110/",
+          "subtechnique": [
+            {
+              "id": "T1110.001",
+              "name": "Password Guessing",
+              "reference": "https://attack.mitre.org/techniques/T1110/001/"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

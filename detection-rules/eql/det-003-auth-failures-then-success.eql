@@ -1,0 +1,5 @@
+sequence by host.name, user.name with maxspan=5m
+  [authentication where event.code == "4625"]
+  [authentication where event.code == "4625"]
+  [authentication where event.code == "4625"]
+  [authentication where event.code == "4624"]

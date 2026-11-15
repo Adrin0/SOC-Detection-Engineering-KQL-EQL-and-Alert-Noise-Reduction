@@ -1,0 +1,3 @@
+process where event.type == "start" and
+  process.parent.name : ("mshta.exe", "wscript.exe", "cscript.exe", "regsvr32.exe", "rundll32.exe") and
+  process.name : ("powershell.exe", "pwsh.exe", "cmd.exe")

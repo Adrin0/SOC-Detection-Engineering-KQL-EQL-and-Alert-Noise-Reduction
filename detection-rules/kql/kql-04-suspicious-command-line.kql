@@ -1,0 +1,1 @@
+event.code: "1" and process.command_line: (*EncodedCommand* or *FromBase64String* or *DownloadString* or *Invoke-Expression* or *-nop* or *bypass* or *urlcache*)

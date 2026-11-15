@@ -1,0 +1,1 @@
+event.provider: "Microsoft-Windows-Security-Auditing" and event.code: "4625"

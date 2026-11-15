@@ -1,0 +1,1 @@
+event.provider: "Microsoft-Windows-Sysmon" and event.code: "1" and process.name: ("powershell.exe" or "pwsh.exe")

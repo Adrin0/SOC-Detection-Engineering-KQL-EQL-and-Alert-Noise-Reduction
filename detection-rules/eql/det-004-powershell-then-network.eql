@@ -1,0 +1,4 @@
+sequence by host.name, process.entity_id with maxspan=2m
+  [process where event.type == "start" and process.name : ("powershell.exe", "pwsh.exe")]
+  [network where process.name : ("powershell.exe", "pwsh.exe") and
+    not cidrMatch(destination.ip, "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16", "::1/128", "fe80::/10")]

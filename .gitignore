@@ -1,0 +1,64 @@
+# --- Credentials and environment ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.keystore
+*.kdbx
+secrets/
+credentials/
+*token*
+*apikey*
+*api_key*
+kibana.keystore
+elasticsearch.keystore
+
+# --- Unredacted infrastructure configuration ---
+# Commit sanitized examples only (name them *.example.yml).
+winlogbeat.yml
+filebeat.yml
+packetbeat.yml
+metricbeat.yml
+elastic-agent.yml
+fleet.yml
+logstash.conf
+docker-compose.override.yml
+
+# --- Raw telemetry and large exports ---
+*.evtx
+*.pcap
+*.pcapng
+*.log
+*.log.*
+*.gz
+*.zip
+*.7z
+datasets/raw/
+results/**/raw/
+exports/
+
+# --- Local databases ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Unredacted screenshots (redact, then move into screenshots/<area>/) ---
+screenshots/_unredacted/
+
+# --- Temporary and editor files ---
+*.tmp
+*.bak
+*.swp
+~$*
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+.claude/

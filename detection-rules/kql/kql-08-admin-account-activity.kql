@@ -1,0 +1,1 @@
+event.provider: "Microsoft-Windows-Security-Auditing" and event.code: ("4672" or "4720" or "4722" or "4724" or "4728" or "4732" or "4756") and not winlog.event_data.SubjectUserName: (SYSTEM or *$)

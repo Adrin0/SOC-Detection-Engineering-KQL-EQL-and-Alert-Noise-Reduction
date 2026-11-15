@@ -1,0 +1,4 @@
+sequence by host.name, user.name with maxspan=2m
+  [process where event.type == "start" and process.name : "whoami.exe"]
+  [process where event.type == "start" and process.name : ("net.exe", "net1.exe")]
+  [process where event.type == "start" and process.name : ("ipconfig.exe", "systeminfo.exe", "nltest.exe")]
