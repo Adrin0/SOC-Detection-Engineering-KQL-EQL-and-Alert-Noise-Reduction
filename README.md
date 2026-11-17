@@ -77,7 +77,7 @@ Filebeat on Linux) through Logstash; a Fleet Server also runs but has no enrolle
 The lab guests share the home LAN bridge and are not network-isolated; VM 102 has a host
 allowlist, and isolation on a dedicated bridge is a planned change.
 
-Screenshot pending: Proxmox guest inventory (`screenshots/architecture/01-proxmox-inventory.png`).
+[Proxmox guest inventory](screenshots\architecture\01-proxmox-inventory.png)
 
 ## 3. Technology stack
 
