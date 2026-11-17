@@ -2,6 +2,16 @@
 
 Notable changes to this repository. Dates are ISO 8601.
 
+## 2026-11-17
+
+### Changed
+
+- Network diagrams in the README and `docs/01-lab-architecture.md` redrawn for the current
+  virtual infrastructure: Windows endpoint as VM 104 `soc-win-ep` (192.168.1.62) on `vmbr0`,
+  plus VM 100 `mgmt`, VM 101 `opnsense` (stopped, planned isolation), ports, and addresses.
+- Architecture status, network, and verification tables updated: VM 103 now reaches Logstash
+  on 5044; Windows telemetry from VM 104 and its `clean-baseline` snapshot are not verified.
+
 ## 2026-11-15 (infrastructure)
 
 ### Added

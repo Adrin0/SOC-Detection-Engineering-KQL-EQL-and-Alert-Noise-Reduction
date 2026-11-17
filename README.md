@@ -50,21 +50,23 @@ not as proof of an attack.
 
 ## 2. Architecture
 
-**Deployed 2026-11-15; endpoints not yet delivering.** The Elastic 9.5.6 stack (VM 102) and
-the Linux endpoint (VM 103) are running and verified. Details and the verification table are
+**Deployed 2026-11-15; Windows endpoint moved into Proxmox as VM 104 on 2026-11-17.** The
+Elastic 9.5.6 stack (VM 102) and the Linux endpoint (VM 103) are running and verified; Windows
+telemetry from VM 104 is not verified yet. Details and the verification table are
 in [docs/01-lab-architecture.md](docs/01-lab-architecture.md); deployment files are in
 [infrastructure/](infrastructure/README.md).
 
 ```mermaid
 flowchart LR
-    subgraph PVE["Proxmox VE host"]
-        subgraph ELK["VM 102 soc-elastic - Elastic 9.5.6"]
-            LS["Logstash"] --> ES[("Elasticsearch")]
+    subgraph PVE["Proxmox VE host hadron - vmbr0, 192.168.1.0/24"]
+        subgraph ELK["VM 102 soc-elastic - 192.168.1.60, Elastic 9.5.6"]
+            LS["Logstash :5044"] --> ES[("Elasticsearch")]
             ES --> KB["Kibana / Elastic Security"]
         end
-        LNX["VM 103 Linux endpoint<br/>Filebeat"]
+        LNX["VM 103 Linux endpoint - .61<br/>Filebeat"]
+        WIN["VM 104 Windows 11 endpoint - .62<br/>Sysmon + Winlogbeat"]
     end
-    WIN["Windows 11 endpoint<br/>Sysmon + Winlogbeat"] --> LS
+    WIN --> LS
     LNX --> LS
     KB --> DR["Detection rules<br/>KQL / EQL / threshold"]
     DR --> AN["Analyst investigation"]
@@ -102,7 +104,7 @@ else is not yet confirmed for this project.
 
 | # | Step | How | State |
 |---|---|---|---|
-| 1 | Create the guests | VM 102 `soc-elastic` (stack), VM 103 `soc-linux-ep` (Linux endpoint); Windows 11 endpoint on the LAN | **Verified** 2026-11-15 |
+| 1 | Create the guests | VM 102 `soc-elastic` (stack), VM 103 `soc-linux-ep` (Linux endpoint); Windows 11 endpoint on the LAN (replaced by VM 104 `soc-win-ep` on 2026-11-17) | **Verified** 2026-11-15 |
 | 2 | Configure network isolation | Move lab guests to a dedicated bridge or VLAN with no route to the home LAN | **Not done.** Guests share the LAN bridge; VM 102 has a host allowlist |
 | 3 | Install Elastic components | Elasticsearch, Kibana, Fleet Server, Logstash 9.5.6 via Docker Compose on VM 102 | **Verified** 2026-11-15, all healthy |
 | 4 | Enroll endpoint shippers | Filebeat 9.5.6 on VM 103; Winlogbeat 9.5.6 on Windows ([manual steps](infrastructure/windows-endpoint/README.md)) | Linux: configured, **blocked** by VM 102 firewall on 5044. Windows: 7.17.26 must be upgraded |
