@@ -1,46 +1,47 @@
 # 01 — Lab Architecture
 
-> **Status: proposed architecture, partially verified.** The table under
-> [Verification state](#verification-state) lists exactly what has been confirmed and how.
-> Everything else is the intended design and is labeled as such.
+> **Status: deployed 2026-11-15, endpoints not yet delivering.** The Elastic stack and the
+> Linux endpoint are running and verified (see [Verification state](#verification-state)).
+> Events don't arrive yet because the VM 102 host firewall drops Logstash traffic from
+> endpoints, and the Windows endpoint still runs Winlogbeat 7.17.26.
+> Deployment files and procedures: [infrastructure/](../infrastructure/README.md).
 
 ## Components
 
 | Component | Role | Where it runs |
 |---|---|---|
-| Proxmox VE | Virtualization host | Single physical host |
-| ELK stack (Elasticsearch, Logstash, Kibana 7.17.26) | Storage, routing, SIEM UI | LXC 104 `elk-stack`, Docker Compose |
-| Windows 11 endpoint | Windows telemetry source | Windows 11 Pro host on the lab LAN |
+| Proxmox VE 9.2 (`hadron`) | Virtualization host | Single physical host |
+| Elasticsearch, Kibana, Fleet Server 9.5.6 | Storage, SIEM UI, agent management | VM 102 `soc-elastic`, Docker Compose in `/opt/elastic` |
+| Logstash 9.5.6 | Beats input and index routing | VM 102, same Compose project (`docker-compose.override.yml`) |
+| Linux endpoint | Linux telemetry source | VM 103 `soc-linux-ep`, Ubuntu 24.04, rsyslog, Filebeat 9.5.6 |
+| Windows 11 endpoint | Windows telemetry source | Windows 11 Pro host on the LAN |
 | Sysmon (SwiftOnSecurity config) | Process, network, and file telemetry | Windows endpoint |
-| Winlogbeat 7.17.26 | Ships Windows Event Log and Sysmon events | Windows endpoint |
-| Linux endpoint | Linux telemetry source | LXC 105 (Filebeat / Packetbeat / Metricbeat) |
+| Winlogbeat (7.17.26 installed, 9.5.6 required) | Ships Windows Event Log and Sysmon events | Windows endpoint |
 
 ## Differences from the original project brief
 
-The brief for this project assumed Elastic Agent on a Windows 11 VM and an Ubuntu VM. The lab
-that actually exists is different, and this repository documents the lab as it is:
-
 | Brief | Actual lab | Effect on this project |
 |---|---|---|
-| Elastic Agent + Fleet | Beats (Winlogbeat, Filebeat) through Logstash | ECS fields depend on Beats module processors, see [02](02-telemetry-configuration.md) |
+| Elastic Agent + Fleet | Beats (Winlogbeat, Filebeat) through Logstash; Fleet Server also runs but no agents are enrolled | ECS fields come from the Beats ingest pipelines, see [02](02-telemetry-configuration.md) |
 | Windows 11 VM in Proxmox | Windows 11 Pro host on the LAN | Not snapshot-revertible; simulations must stay benign |
-| Ubuntu VM | Linux LXC container | Auth logging in a container needs checking before KQL-07 |
-| Isolated lab network | All guests share the `vmbr0` LAN bridge | Lab is **not** network-isolated today |
-| Current Elastic Stack | Elastic 7.17.26, no `xpack.security` | Detection engine prerequisites are not met yet, see [known issues](../PROJECT_STATUS.md#known-issues) |
+| Ubuntu VM | Ubuntu 24.04 VM 103 | As planned |
+| Isolated lab network | All guests share the `vmbr0` LAN bridge; VM 102 has a host allowlist (`soc_guard`) | Lab is **not** network-isolated today |
+| Current Elastic Stack | Elastic 9.5.6 with security and TLS on | Detection engine prerequisites are met |
 
-Migrating to Elastic Agent or a newer stack is listed under future development. It is not a
-prerequisite for the KQL and EQL exercises.
+The stack on VM 102 was built on 2026-11-02 for an earlier phase of the lab and was reused
+unchanged. This project added Logstash, a `logstash_writer` user, a `soc_analyst` login,
+and the Filebeat index template and pipelines.
 
 ## Data flow
 
 ```mermaid
 flowchart LR
-    subgraph PVE["Proxmox VE host - vmbr0 LAN bridge"]
-        subgraph ELK["LXC 104 elk-stack - Docker Compose, Elastic 7.17.26"]
-            LS["Logstash :5045"] --> ES[("Elasticsearch :9201")]
-            ES --> KB["Kibana / Elastic Security :5602"]
+    subgraph PVE["Proxmox VE host hadron - vmbr0 LAN bridge"]
+        subgraph ELK["VM 102 soc-elastic - Docker Compose, Elastic 9.5.6"]
+            LS["Logstash :5044"] --> ES[("Elasticsearch :9200")]
+            ES --> KB["Kibana / Elastic Security :5601"]
         end
-        LNX["LXC 105 Linux endpoint<br/>Filebeat / Packetbeat"]
+        LNX["VM 103 soc-linux-ep<br/>rsyslog + Filebeat"]
     end
     WIN["Windows 11 endpoint<br/>Sysmon + Winlogbeat"] --> LS
     LNX --> LS
@@ -49,36 +50,34 @@ flowchart LR
 ```
 
 Every Beat ships to Logstash, never directly to Elasticsearch, so index routing is applied in
-one place. Logstash drops events that match no branch of its output conditional without logging
-an error, which makes a missing branch look like a silent sensor.
+one place. The Logstash pipeline has a single default output for every Beat (with a branch
+that selects the Winlogbeat routing pipeline), so no Beat can be dropped by a missing branch.
 
 ## Network
 
 | Item | Value | State |
 |---|---|---|
-| Bridge | `vmbr0`, shared with the home LAN | From lab documentation |
-| Addressing | DHCP from the LAN router, not static | From lab documentation |
-| Remote access | WireGuard on the Proxmox host | From lab documentation |
-| Isolation between lab guests and LAN | None | Proposed: dedicated bridge or VLAN |
-
-Because addresses are DHCP-assigned, no IP addresses are recorded in this repository. Docs use
-`<ELK_LXC_IP>`; obtain the current value on the Proxmox host with `pct exec 104 -- hostname -I`.
+| Bridge | `vmbr0`, shared with the home LAN | Verified (`/etc/network/interfaces`) |
+| Addressing | Static via cloud-init: VM 102 192.168.1.60, VM 103 192.168.1.61 | Verified |
+| VM 102 host firewall | nftables table `inet soc_guard` (`/etc/soc-guard.nft`): 9200, 5601 and 8220 from listed admin hosts only | Verified |
+| Endpoint → Logstash 5044 | Dropped by `soc_guard` | **Blocking**, change proposed |
+| Isolation between lab guests and LAN | None | Planned: vmbr20 / 10.10.20.0/24 |
 
 ## Verification state
 
-Checked on 2026-11-15 from the Windows endpoint, read-only.
-
 | Claim | Evidence | State |
 |---|---|---|
-| Sysmon service is running on the Windows endpoint | `Get-Service Sysmon64` returned Running | Verified |
-| Winlogbeat service is running | `Get-Service winlogbeat` returned Running | Verified |
-| Winlogbeat collects Sysmon, Security, System, Application and outputs to Logstash on 5045 | Local `winlogbeat.yml` | Verified (configuration) |
-| Winlogbeat is delivering events | Winlogbeat log shows repeated `Failed to connect` to the Logstash address | **Failing on 2026-11-15** |
-| Elasticsearch and Kibana are reachable | HTTP requests to ports 9201 and 5602 timed out | **Not reachable on 2026-11-15** |
-| Stack version is 7.17.26 | Lab `docker-compose.yml`; Winlogbeat install | Configuration only, running version not confirmed |
-| Windows events are indexed in `winlogbeat-*` | No query possible | Not verified |
-| Linux auth events are indexed in `filebeat-*` | No query possible | Not verified |
-| Elastic Security detection engine is usable | No query possible | Not verified |
+| Sysmon service is running on the Windows endpoint | `Get-Service Sysmon64` returned Running (2026-11-15) | Verified |
+| Winlogbeat service is running | `Get-Service winlogbeat` returned Running (2026-11-15) | Verified, but version 7.17.26 must be replaced |
+| Elasticsearch 9.5.6 is up | `GET /` returns 9.5.6; `_cluster/health` green, 1 node (2026-11-15) | Verified |
+| Kibana, Fleet Server, Logstash are healthy | `docker compose ps`: all healthy (2026-11-15) | Verified |
+| Logstash listens on 5044 and authenticates to ES | Logstash log: "Elasticsearch version determined (9.5.6)", "Starting input listener 0.0.0.0:5044" | Verified |
+| Elastic Security detection engine is usable | `POST /api/detection_engine/index` acknowledged; privileges API reports `has_encryption_key: true` | Verified |
+| Filebeat template maps `source.ip` as `ip` | `_simulate_index/filebeat-9.5.6` | Verified |
+| Linux endpoint Filebeat is configured | `filebeat test config` OK on VM 103 | Verified |
+| Linux endpoint can reach Logstash | `filebeat test output`: dial timeout | **Failing**, firewall |
+| Windows events are indexed in `winlogbeat-*` | Not shipping yet | Not verified |
+| Linux auth events are indexed in `filebeat-*` | Not shipping yet | Not verified |
 
 ## Screenshot
 

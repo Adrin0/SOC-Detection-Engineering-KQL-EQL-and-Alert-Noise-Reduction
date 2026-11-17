@@ -120,9 +120,9 @@ python scripts/calc_metrics.py --ground-truth results/baseline/ground-truth.csv 
 
 ### Blockers
 
-The Elastic Security detection engine in 7.17 requires Elasticsearch security to be enabled
-and a Kibana encryption key. The lab stack has neither, so rules cannot be created until that
-is changed. See [known issues](../PROJECT_STATUS.md#known-issues). The threshold logic can
-still be explored beforehand with a Discover histogram or an aggregation query.
+The detection engine prerequisites (Elasticsearch security, Kibana encryption key) are met
+on the 9.5.6 stack as of 2026-11-15. The remaining blocker is data: the Windows endpoint must
+ship Security 4625 events (Winlogbeat 9.5.6, failure auditing enabled, Logstash reachable).
+See [known issues](../PROJECT_STATUS.md#known-issues).
 
 Screenshots pending: `09-baseline-alerts.png`, `10-tuned-alerts.png`, `12-detection-metrics.png`.

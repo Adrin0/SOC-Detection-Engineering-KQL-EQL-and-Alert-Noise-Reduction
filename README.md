@@ -4,7 +4,7 @@ Hands-on SOC detection engineering lab featuring KQL threat hunting, EQL behavio
 detections, alert tuning, false-positive reduction, and MITRE ATT&CK validation using
 Elastic Security.
 
-> **Project state (2026-11-15): initialized, no exercises run yet.**
+> **Project state (2026-11-15): infrastructure deployed, no exercises run yet.**
 > The repository contains the lab documentation, eight KQL hunts, six draft detections, a
 > tuning experiment plan, and the tooling to measure results. Every query and rule is an
 > untested draft, there are no screenshots, and there are no measured results. Nothing here
@@ -50,19 +50,19 @@ not as proof of an attack.
 
 ## 2. Architecture
 
-**Proposed architecture, partially verified.** The endpoint side was confirmed on
-2026-11-15; the ELK side was unreachable that day and is documented from lab configuration.
-Details and the full verification table are in
-[docs/01-lab-architecture.md](docs/01-lab-architecture.md).
+**Deployed 2026-11-15; endpoints not yet delivering.** The Elastic 9.5.6 stack (VM 102) and
+the Linux endpoint (VM 103) are running and verified. Details and the verification table are
+in [docs/01-lab-architecture.md](docs/01-lab-architecture.md); deployment files are in
+[infrastructure/](infrastructure/README.md).
 
 ```mermaid
 flowchart LR
     subgraph PVE["Proxmox VE host"]
-        subgraph ELK["ELK container - Elastic 7.17"]
+        subgraph ELK["VM 102 soc-elastic - Elastic 9.5.6"]
             LS["Logstash"] --> ES[("Elasticsearch")]
             ES --> KB["Kibana / Elastic Security"]
         end
-        LNX["Linux endpoint<br/>Filebeat"]
+        LNX["VM 103 Linux endpoint<br/>Filebeat"]
     end
     WIN["Windows 11 endpoint<br/>Sysmon + Winlogbeat"] --> LS
     LNX --> LS
@@ -70,10 +70,10 @@ flowchart LR
     DR --> AN["Analyst investigation"]
 ```
 
-The original plan called for Elastic Agent. The lab that exists ships with Beats
-(Winlogbeat on Windows, Filebeat on Linux) through Logstash, so that is what is documented.
-The lab guests currently share the home LAN bridge and are not network-isolated; isolation
-is a planned change.
+The original plan called for Elastic Agent. The lab ships with Beats (Winlogbeat on Windows,
+Filebeat on Linux) through Logstash; a Fleet Server also runs but has no enrolled agents.
+The lab guests share the home LAN bridge and are not network-isolated; VM 102 has a host
+allowlist, and isolation on a dedicated bridge is a planned change.
 
 Screenshot pending: Proxmox guest inventory (`screenshots/architecture/01-proxmox-inventory.png`).
 
@@ -83,9 +83,9 @@ Screenshot pending: Proxmox guest inventory (`screenshots/architecture/01-proxmo
 |---|---|
 | Proxmox VE | Virtualization |
 | Windows 11 | Endpoint telemetry |
-| Linux (LXC container; Ubuntu VM planned) | Linux telemetry |
+| Ubuntu 24.04 VM | Linux telemetry |
 | Sysmon | Windows process monitoring |
-| Winlogbeat / Filebeat (Elastic Agent planned) | Event collection |
+| Winlogbeat / Filebeat 9.5.6 (Elastic Agent planned) | Event collection |
 | Logstash | Event routing |
 | Elasticsearch | Event storage and search |
 | Kibana | Investigation interface |
@@ -102,24 +102,23 @@ else is not yet confirmed for this project.
 
 | # | Step | How | State |
 |---|---|---|---|
-| 1 | Create the guests | ELK and Linux endpoint as Proxmox LXC containers; Windows 11 endpoint on the LAN | Not verified (Proxmox not inspected) |
-| 2 | Configure network isolation | Move lab guests to a dedicated bridge or VLAN with no route to the home LAN | **Not done.** Guests share the LAN bridge |
-| 3 | Install Elastic components | Elasticsearch, Logstash, Kibana 7.17.26 via Docker Compose in the ELK container | Configuration exists; stack unreachable on 2026-11-15 |
-| 4 | Enroll endpoint shippers | Winlogbeat service on Windows with `output.logstash`; Filebeat on Linux | Windows: service running (Verified), delivery failing. Linux: not verified |
+| 1 | Create the guests | VM 102 `soc-elastic` (stack), VM 103 `soc-linux-ep` (Linux endpoint); Windows 11 endpoint on the LAN | **Verified** 2026-11-15 |
+| 2 | Configure network isolation | Move lab guests to a dedicated bridge or VLAN with no route to the home LAN | **Not done.** Guests share the LAN bridge; VM 102 has a host allowlist |
+| 3 | Install Elastic components | Elasticsearch, Kibana, Fleet Server, Logstash 9.5.6 via Docker Compose on VM 102 | **Verified** 2026-11-15, all healthy |
+| 4 | Enroll endpoint shippers | Filebeat 9.5.6 on VM 103; Winlogbeat 9.5.6 on Windows ([manual steps](infrastructure/windows-endpoint/README.md)) | Linux: configured, **blocked** by VM 102 firewall on 5044. Windows: 7.17.26 must be upgraded |
 | 5 | Configure Sysmon | `sysmon64.exe -accepteula -i sysmonconfig.xml` (SwiftOnSecurity config) | Service running (Verified) |
 | 6 | Validate Windows event ingestion | `GET winlogbeat-*/_count`, then inspect a Sysmon Event ID 1 document | Pending |
 | 7 | Validate Linux event ingestion | Discover on `filebeat-*`: `event.dataset: "system.auth"` | Pending |
-| 8 | Access Kibana Discover | `http://<ELK_LXC_IP>:5602`, create `winlogbeat-*` and `filebeat-*` index patterns | Pending |
-| 9 | Create a detection rule | Security, Rules, Create new rule; start with DET-001 | Blocked, see below |
+| 8 | Access Kibana Discover | `https://192.168.1.60:5601` as `soc_analyst`, create `winlogbeat-*` and `filebeat-*` data views | Kibana reachable; data views pending |
+| 9 | Create a detection rule | Security, Rules, Create new rule; start with DET-001 | Unblocked: detection engine verified |
 | 10 | Verify alert generation | Run the DET-001 simulation and confirm an alert | Pending |
 
 Telemetry configuration, the gaps found in it, and the validation checklist are in
 [docs/02-telemetry-configuration.md](docs/02-telemetry-configuration.md).
 
-**Blocker for steps 9 and 10:** the Elastic Security detection engine in 7.17 requires
-Elasticsearch security to be enabled and a Kibana saved-objects encryption key. The lab
-stack runs with neither. KQL hunting and EQL searches through the API do not need this;
-creating detection rules does.
+**Detection engine:** Elastic Security rules need Elasticsearch security and a Kibana
+saved-objects encryption key. The 9.5.6 stack has both; the detection engine index was
+created and the privileges API reports an encryption key (2026-11-15).
 
 Screenshots pending: `02-elastic-dashboard.png`, `03-agent-enrollment.png`, `04-windows-logs.png`.
 
@@ -174,9 +173,9 @@ fit inside `maxspan`. They do not have to be adjacent. Full explanation and all 
 | [DET-005](docs/detections/DET-005-script-host-spawns-shell.md) | Suspicious process ancestry | Event | Untested |
 | [DET-006](docs/detections/DET-006-discovery-burst.md) | Correlated activity on a single host | Sequence | Untested |
 
-"Untested" means the syntax follows the Elasticsearch 7.17 EQL reference but has not been
-run. EQL also depends on `event.category`, which the current Winlogbeat configuration
-probably does not produce; see [docs/02](docs/02-telemetry-configuration.md).
+"Untested" means the syntax follows the Elasticsearch EQL reference but has not been run
+against the lab's 9.5.6 stack. EQL depends on `event.category`, which Winlogbeat only
+produces through its routing ingest pipeline; see [docs/02](docs/02-telemetry-configuration.md).
 
 Screenshots pending: `07-eql-rule.png`, `08-eql-alert.png`.
 

@@ -1,0 +1,12 @@
+# Certificate SANs carry the current vmbr0 address and the future vmbr20 address (ADR-007),
+# so the move to the SOC zone doesn't need new certificates.
+instances:
+  - name: es01
+    dns: [es01, soc-elastic, soc-elastic.home.arpa, localhost]
+    ip: [192.168.1.60, 10.10.20.10, 127.0.0.1]
+  - name: kibana
+    dns: [kibana, soc-elastic, soc-elastic.home.arpa, localhost]
+    ip: [192.168.1.60, 10.10.20.10, 127.0.0.1]
+  - name: fleet-server
+    dns: [fleet-server, soc-elastic, soc-elastic.home.arpa, localhost]
+    ip: [192.168.1.60, 10.10.20.10, 127.0.0.1]

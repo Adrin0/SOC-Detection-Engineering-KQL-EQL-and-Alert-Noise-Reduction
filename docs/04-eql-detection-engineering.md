@@ -1,8 +1,9 @@
 # 04 — EQL Detection Engineering
 
 Five behavioral detections written in EQL. **All rules are untested**: syntax follows the
-Elasticsearch 7.17 EQL reference but none has been run, because the lab stack was unreachable
-when they were written (2026-11-15).
+Elasticsearch EQL reference but none has been run. They were written (2026-11-15) while the
+stack was unreachable; it has since been deployed as Elastic 9.5.6, but no endpoint events
+are indexed yet.
 
 ## How EQL differs from KQL
 

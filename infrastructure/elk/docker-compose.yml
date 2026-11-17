@@ -1,0 +1,152 @@
+# Single-node Elastic stack for the SOC lab (ADR-002, ADR-007).
+# Derived from Elastic's official docker-compose example, plus Fleet Server.
+services:
+  # One-shot: create the CA and node certificates (no-op when they exist)
+  certs:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    user: "0"
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - ./instances.yml:/usr/share/elasticsearch/config/instances.yml:ro
+    command: >
+      bash -c '
+        set -e;
+        if [ ! -f config/certs/ca.zip ]; then
+          echo "Creating CA";
+          bin/elasticsearch-certutil ca --silent --pem -out config/certs/ca.zip;
+          unzip -o config/certs/ca.zip -d config/certs;
+        fi;
+        if [ ! -f config/certs/certs.zip ]; then
+          echo "Creating certs";
+          bin/elasticsearch-certutil cert --silent --pem -out config/certs/certs.zip --in config/instances.yml --ca-cert config/certs/ca/ca.crt --ca-key config/certs/ca/ca.key;
+          unzip -o config/certs/certs.zip -d config/certs;
+        fi;
+        # Fleet ca_trusted_fingerprint only matches a CA the server sends, so serve leaf + CA
+        cat config/certs/es01/es01.crt config/certs/ca/ca.crt > config/certs/es01/es01-chain.crt;
+        chown -R 1000:0 config/certs;
+        find config/certs -type d -exec chmod 750 {} \;;
+        find config/certs -type f -exec chmod 640 {} \;;
+        echo "Certs ready";
+      '
+
+  # One-shot: set the kibana_system password once ES is up (idempotent)
+  passwords:
+    depends_on:
+      es01:
+        condition: service_healthy
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs:ro
+    environment:
+      - ELASTIC_PASSWORD
+      - KIBANA_PASSWORD
+    command: >
+      bash -c '
+        until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://es01:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 5; done;
+        echo "kibana_system password set";
+      '
+
+  es01:
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    restart: unless-stopped
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - esdata01:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    environment:
+      - node.name=es01
+      - cluster.name=soc-lab
+      - discovery.type=single-node
+      - ELASTIC_PASSWORD
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/es01/es01.key
+      - xpack.security.http.ssl.certificate=certs/es01/es01-chain.crt
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.key=certs/es01/es01.key
+      - xpack.security.transport.ssl.certificate=certs/es01/es01.crt
+      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.license.self_generated.type=basic
+      - cluster.routing.allocation.disk.watermark.low=85%
+      - cluster.routing.allocation.disk.watermark.high=90%
+      - cluster.routing.allocation.disk.watermark.flood_stage=95%
+      - ES_JAVA_OPTS=-Xms4g -Xmx4g
+    mem_limit: 6g
+    ulimits:
+      memlock: {soft: -1, hard: -1}
+      nofile: {soft: 65535, hard: 65535}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
+  kibana:
+    depends_on:
+      passwords:
+        condition: service_completed_successfully
+    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+    restart: unless-stopped
+    volumes:
+      - certs:/usr/share/kibana/config/certs
+      - kibanadata:/usr/share/kibana/data
+      - ./kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    ports:
+      - "5601:5601"
+    environment:
+      - KIBANA_PASSWORD
+      - KIBANA_SECURITY_KEY
+      - KIBANA_ESO_KEY
+      - KIBANA_REPORTING_KEY
+      - KIBANA_PUBLIC_URL
+      - ES_PUBLIC_URL
+      - FLEET_URL
+      - CA_FINGERPRINT
+      - NODE_OPTIONS=--max-old-space-size=1024
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -I --cacert config/certs/ca/ca.crt https://localhost:5601 | grep -qE '^HTTP/[0-9.]+ 302'"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
+  fleet-server:
+    depends_on:
+      kibana:
+        condition: service_healthy
+    image: docker.elastic.co/elastic-agent/elastic-agent:${STACK_VERSION}
+    restart: unless-stopped
+    volumes:
+      - certs:/certs:ro
+      - fleetdata:/usr/share/elastic-agent/state
+    ports:
+      - "8220:8220"
+    environment:
+      - FLEET_SERVER_ENABLE=1
+      - FLEET_SERVER_ELASTICSEARCH_HOST=https://es01:9200
+      - FLEET_SERVER_ELASTICSEARCH_CA=/certs/ca/ca.crt
+      - FLEET_SERVER_SERVICE_TOKEN=${FLEET_SERVER_SERVICE_TOKEN}
+      - FLEET_SERVER_POLICY_ID=fleet-server-policy
+      - FLEET_SERVER_CERT=/certs/fleet-server/fleet-server.crt
+      - FLEET_SERVER_CERT_KEY=/certs/fleet-server/fleet-server.key
+      - FLEET_URL=https://fleet-server:8220
+      - FLEET_CA=/certs/ca/ca.crt
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs --cacert /certs/ca/ca.crt https://localhost:8220/api/status | grep -q HEALTHY"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+
+volumes:
+  certs:
+  esdata01:
+  kibanadata:
+  fleetdata:

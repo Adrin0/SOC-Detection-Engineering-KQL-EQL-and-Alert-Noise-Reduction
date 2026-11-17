@@ -12,7 +12,7 @@ field mapping, then record results and change its status.
 | `field: "two words"` | Phrase match. Wildcards inside quotes are literal |
 | `field: (a or b)` | Any of several values |
 | `field: *` | Field exists |
-| `field: *text*` | Wildcard, case-sensitive on keyword fields in 7.17 |
+| `field: *text*` | Wildcard, case-sensitive on keyword fields |
 | `not`, `and`, `or` | Boolean logic; use parentheses, `and` binds tighter than `or` |
 | `field >= 10` | Range on numeric and date fields |
 | `ip_field: 10.0.0.0/8` | CIDR match, only on fields mapped as `ip` |

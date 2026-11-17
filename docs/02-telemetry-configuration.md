@@ -1,122 +1,92 @@
 # 02 — Telemetry Configuration
 
-How events get from the endpoints into fields that KQL and EQL can query. Nothing in this
-document has been applied to the lab; the proposed changes need approval and a test.
+How events get from the endpoints into fields that KQL and EQL can query. The stack side was
+deployed on 2026-11-15 (Elastic 9.5.6); the deployed files are in
+[infrastructure/](../infrastructure/README.md). No endpoint is delivering events yet.
 
-## Current Windows collection (verified from the local config, 2026-11-15)
+## Pipeline
 
-Sanitized `winlogbeat.yml`:
+```
+Winlogbeat 9.5.6 (Windows) ─┐
+                            ├─► Logstash :5044 ─► Elasticsearch ─► winlogbeat-9.5.6 / filebeat-9.5.6
+Filebeat 9.5.6 (VM 103) ────┘                     (ingest pipeline does ECS parsing)
+```
+
+Logstash writes every Beat to `<beat>-<version>` with `action => "create"`, which matches the
+data streams the Beats index templates define. It also selects the ingest pipeline that does
+the parsing:
+
+| Source | Ingest pipeline | Selected by |
+|---|---|---|
+| Winlogbeat | `winlogbeat-9.5.6-routing` (dispatches to sysmon, security, powershell) | A dedicated `winlogbeat` branch in [beats.conf](../infrastructure/elk/logstash/pipeline/beats.conf) |
+| Filebeat modules | The module pipeline, e.g. `filebeat-9.5.6-system-auth-entrypoint` | `[@metadata][pipeline]`, set by Filebeat |
+
+## Windows collection
+
+The endpoint currently runs Winlogbeat 7.17.26 with this config (sanitized, verified
+2026-11-15). It has to be replaced:
 
 ```yaml
 winlogbeat.event_logs:
   - name: Microsoft-Windows-Sysmon/Operational
   - name: Security
-    ignore_older: 72h
   - name: System
-    ignore_older: 72h
   - name: Application
-    ignore_older: 72h
-
 output.logstash:
-  hosts: ["<ELK_LXC_IP>:5045"]
-
+  hosts: ["<old ELK address>:5045"]
 processors:
   - add_host_metadata: ~
 ```
 
+The replacement is [infrastructure/windows-endpoint/winlogbeat.yml](../infrastructure/windows-endpoint/winlogbeat.yml)
+for Winlogbeat 9.5.6. It adds the PowerShell Operational channel (4103–4106) and the Windows
+PowerShell channel, and ships to `192.168.1.60:5044`. Upgrade steps are in
+[infrastructure/windows-endpoint/README.md](../infrastructure/windows-endpoint/README.md).
+
 Sysmon is installed with the SwiftOnSecurity `sysmonconfig.xml`.
 
-## Gaps that affect the exercises
+## Gaps and how they were handled
 
-### 1. No module processors, so most ECS fields are missing
+### 1. ECS fields (`event.category`, `process.*`, `user.name`, `source.ip`)
 
-In Winlogbeat 7.17 the ECS mapping for Sysmon and Security events is done by JavaScript
-processors that ship in the install directory under `module/`. The current config does not
-load them. Expected consequence, to be confirmed against the index mapping:
+In Winlogbeat 7.17 these came from JavaScript processors that the old config did not load.
+In 8.x and later the same parsing runs in Elasticsearch ingest pipelines. Two things make it
+work through Logstash:
 
-| Present without the processors | Missing without the processors |
-|---|---|
-| `event.code`, `event.provider`, `event.kind`, `host.name` | `event.category`, `event.type`, `event.outcome`, `event.action` |
-| `winlog.channel`, `winlog.event_id`, `winlog.event_data.*` | `process.*`, `user.name`, `source.ip`, `destination.ip` |
+- The pipelines exist only after `winlogbeat setup --pipelines` has run once against
+  Elasticsearch. **Pending**: this needs Winlogbeat 9.5.6 on the Windows host.
+- Winlogbeat does not pass its pipeline name to Logstash, so Logstash names it explicitly.
+  **Done** (2026-11-15).
 
-EQL selects events by `event.category` (`process where ...`), so the EQL exercises cannot
-match anything until these processors are enabled. The KQL exercises each list a raw
-`winlog.event_data.*` fallback.
+EQL selects events by `event.category`, so the EQL exercises match nothing until both are in
+place. The KQL exercises each list a raw `winlog.event_data.*` fallback.
 
-Proposed replacement for the `winlogbeat.event_logs` block (the `module` directory with
-`sysmon`, `security`, and `powershell` exists in the local install):
+### 2. PowerShell script block logging
 
-```yaml
-winlogbeat.event_logs:
-  - name: Microsoft-Windows-Sysmon/Operational
-    processors:
-      - script:
-          lang: javascript
-          id: sysmon
-          file: ${path.home}/module/sysmon/config/winlogbeat-sysmon.js
-  - name: Security
-    ignore_older: 72h
-    processors:
-      - script:
-          lang: javascript
-          id: security
-          file: ${path.home}/module/security/config/winlogbeat-security.js
-  - name: Microsoft-Windows-PowerShell/Operational
-    event_id: 4103, 4104, 4105, 4106
-    ignore_older: 72h
-    processors:
-      - script:
-          lang: javascript
-          id: powershell
-          file: ${path.home}/module/powershell/config/winlogbeat-powershell.js
-  - name: System
-    ignore_older: 72h
-  - name: Application
-    ignore_older: 72h
-```
+The new config collects the PowerShell Operational channel. Script block logging (Event ID
+4104) also has to be enabled in Windows policy; the command is in the Windows README.
 
-Check the config before restarting the service: `winlogbeat.exe test config`.
+### 3. Index template and field types
 
-### 2. PowerShell script block logging is not collected
+If the index name doesn't match a Beats template, Elasticsearch maps fields dynamically and IP
+addresses become text, which breaks CIDR matching in KQL and `cidrMatch()` in EQL. Logstash
+now writes to `<beat>-<version>`, which matches the templates.
 
-The `Microsoft-Windows-PowerShell/Operational` channel is not in the current config, so the
-PowerShell exercises rely on Sysmon process creation (Event ID 1) only. Command-line arguments
-are visible; script content is not. The block above adds the channel. Script block logging
-(Event ID 4104) also has to be enabled in Windows policy before it produces events.
+- Filebeat: template `filebeat-9.5.6` loaded; `source.ip` simulates as type `ip`. **Verified**
+  2026-11-15.
+- Winlogbeat: template is loaded by the same `setup` run as the pipelines. **Pending**.
 
-### 3. Index template may not match the Logstash index name
-
-Field types come from the Winlogbeat index template, whose pattern in 7.17 is
-`winlogbeat-<version>-*`. If Logstash writes to `winlogbeat-<date>` the template does not
-apply and Elasticsearch falls back to dynamic mapping, where IP addresses become text. That
-breaks CIDR matching in KQL and `cidrMatch()` in EQL. To check:
+Check after events arrive:
 
 ```http
 GET winlogbeat-*/_mapping/field/destination.ip
 ```
 
-The result should show `"type": "ip"`. If it does not, load the template once and include the
-Beat version in the Logstash index name:
+### 4. Logstash branches
 
-```powershell
-.\winlogbeat.exe setup --index-management -E output.logstash.enabled=false -E 'output.elasticsearch.hosts=["<ELK_LXC_IP>:9201"]'
-```
-
-```conf
-} else if [@metadata][beat] == "winlogbeat" {
-  elasticsearch {
-    hosts => ["http://elasticsearch:9200"]
-    index => "%{[@metadata][beat]}-%{[@metadata][version]}-%{+YYYY.MM.dd}"
-  }
-}
-```
-
-### 4. Logstash must have a `winlogbeat` branch
-
-The Logstash output is an if / else-if chain on `[@metadata][beat]`. Events from a Beat with no
-branch are dropped without an error. The local checkout of the lab repository reviewed on
-2026-11-15 contained branches for Filebeat, Metricbeat, and Packetbeat only. Confirm the
-deployed `logstash.conf` on LXC 104 has the Winlogbeat branch.
+The old lab Logstash had output branches for some Beats only, and a Beat with no branch was
+dropped without an error. The new pipeline has one default output that every Beat reaches.
+**Done.**
 
 ### 5. Failed-logon auditing is off by default on Windows client editions
 
@@ -130,20 +100,18 @@ auditpol /set /subcategory:"Logon" /success:enable /failure:enable
 
 ### 6. Linux authentication events
 
-KQL-07 needs the Filebeat `system` module on the Linux endpoint (`filebeat modules enable
-system`). Two things to check:
-
-- Filebeat modules parse in Elasticsearch ingest pipelines. When shipping through Logstash the
-  pipelines are only applied if they were loaded (`filebeat setup --pipelines`) and the Logstash
-  Elasticsearch output passes `pipeline => "%{[@metadata][pipeline]}"`. Without that the events
-  arrive unparsed, with the raw line in `message`.
-- A minimal container image may log authentication to journald only, with no
-  `/var/log/auth.log` for Filebeat to read.
+- VM 103 runs rsyslog, so `/var/log/auth.log` exists. **Verified**.
+- Filebeat `system` module is enabled for `auth` and `syslog`. **Verified** (`filebeat test config`).
+- The module's ingest pipelines are loaded in Elasticsearch (from a temporary Filebeat
+  container on VM 102, so the endpoint never needs access to 9200). **Verified**.
+- Filebeat → Logstash 5044 is dropped by the VM 102 host firewall. **Blocking.**
 
 ## Validation checklist
 
 | Check | Command | Result |
 |---|---|---|
+| Logstash reaches Elasticsearch | Logstash log: "Elasticsearch version determined (9.5.6)" | Pass (2026-11-15) |
+| Filebeat can reach Logstash | `filebeat test output` on VM 103 | Fail: firewall (2026-11-15) |
 | Winlogbeat can reach Logstash | `winlogbeat.exe test output` | Pending |
 | Windows documents are arriving | `GET winlogbeat-*/_count` | Pending |
 | Sysmon Event ID 1 has `process.name` | Discover: `event.code: "1"` and inspect a document | Pending |
