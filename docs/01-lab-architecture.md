@@ -99,5 +99,6 @@ that selects the Winlogbeat routing pipeline), so no Beat can be dropped by a mi
 
 ## Screenshot
 
-Pending: `screenshots/architecture/01-proxmox-inventory.png` (Proxmox guest inventory). See the
-[screenshot checklist](screenshot-checklist.md).
+![Proxmox guest inventory](../screenshots/architecture/01-proxmox-inventory.png)
+
+See the [screenshot checklist](screenshot-checklist.md).

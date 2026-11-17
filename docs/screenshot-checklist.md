@@ -1,7 +1,6 @@
 # Screenshot Checklist
 
-Only authentic screenshots captured from the lab are used in this repository. None have been
-captured yet. `python scripts/check_docs.py` reads the table below and reports which files
+Only authentic screenshots captured from the lab are used in this repository. `python scripts/check_docs.py` reads the table below and reports which files
 exist, and fails if a row's status disagrees with what is on disk.
 
 ## Inventory
@@ -10,7 +9,7 @@ Status is `Pending` or `Captured`. Files live in `screenshots/<Folder>/`.
 
 | # | Filename | Folder | Content | Source application | Associated exercise | Status | Capture date | Redaction | README location |
 |---|---|---|---|---|---|---|---|---|---|
-| 01 | `01-proxmox-inventory.png` | architecture | Proxmox guest inventory | Proxmox VE web UI | Lab architecture | Pending | | Not reviewed | Architecture |
+| 01 | `01-proxmox-inventory.png` | architecture | Proxmox guest inventory | Proxmox VE web UI | Lab architecture | Captured | 2026-11-17 | Not reviewed | Architecture |
 | 02 | `02-elastic-dashboard.png` | elastic-setup | Elastic Security overview | Kibana Security | Lab setup | Pending | | Not reviewed | Lab setup |
 | 03 | `03-agent-enrollment.png` | elastic-setup | Endpoint shipping status (Beats in this lab) | Kibana / endpoint console | Telemetry configuration | Pending | | Not reviewed | Lab setup |
 | 04 | `04-windows-logs.png` | elastic-setup | Windows telemetry in Discover | Kibana Discover | Telemetry configuration | Pending | | Not reviewed | Lab setup |
